@@ -1,38 +1,40 @@
-import { BarCodeScanner, BarCodeScannerResult } from 'expo-barcode-scanner';
-import React, { useEffect, useState } from 'react';
+import { CameraView, useCameraPermissions } from 'expo-camera';
+import { useEffect, useRef, useState } from 'react';
 import { Button, StyleSheet, Text, View } from 'react-native';
 
 export default function ScannerScreen() {
-  const [hasPermission, setHasPermission] = useState<boolean | null>(null);
+  const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [qrData, setQrData] = useState<string | null>(null);
+  const cameraRef = useRef<CameraView>(null);
 
   useEffect(() => {
-    (async () => {
-      const { status } = await BarCodeScanner.requestPermissionsAsync();
-      setHasPermission(status === 'granted');
-    })();
+    requestPermission();
   }, []);
 
-  if (hasPermission === null) {
-    return <Text>Demande d'autorisation pour la caméra...</Text>;
-  }
-  if (hasPermission === false) {
-    return <Text>Accès à la caméra refusé</Text>;
-  }
-
-  const handleBarCodeScanned = ({ data }: BarCodeScannerResult) => {
+  const handleBarCodeScanned = ({ data }: { data: string }) => {
     setScanned(true);
     setQrData(data);
   };
 
+  if (!permission) {
+    return <View style={styles.container}><Text>Demande d'accès à la caméra...</Text></View>;
+  }
+  if (!permission.granted) {
+    return <View style={styles.container}><Text>Pas d'accès à la caméra</Text></View>;
+  }
+
   return (
     <View style={styles.container}>
-      <BarCodeScanner
-        onBarCodeScanned={scanned ? undefined : handleBarCodeScanned}
-        style={StyleSheet.absoluteFillObject}
-      />
-      {scanned && (
+      {!scanned ? (
+        <CameraView
+          ref={cameraRef}
+          style={styles.camera}
+          facing="back"
+          onBarcodeScanned={handleBarCodeScanned}
+          barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+        />
+      ) : (
         <View style={styles.result}>
           <Text>QR Code scanné : {qrData}</Text>
           <Button title={'Scanner à nouveau'} onPress={() => { setScanned(false); setQrData(null); }} />
@@ -43,6 +45,7 @@ export default function ScannerScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center' },
-  result: { position: 'absolute', bottom: 50, left: 0, right: 0, alignItems: 'center' },
+  container: { flex: 1, justifyContent: 'center', backgroundColor: '#000' },
+  camera: { flex: 1 },
+  result: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#000' },
 }); 
