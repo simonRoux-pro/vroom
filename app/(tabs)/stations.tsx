@@ -1,86 +1,118 @@
-import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native';
-
-interface StationInfo {
-  station_id: string;
-  name: string;
-  address?: string;
-  lat: number;
-  lon: number;
-}
-
-interface StationStatus {
-  station_id: string;
-  num_bikes_available: number;
-  num_docks_available: number;
-}
-
-interface Station {
-  station_id: string;
-  name: string;
-  address?: string;
-  num_bikes_available: number;
-  num_docks_available: number;
-}
+import React, { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, FlatList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { getBikeNameForId, getBikeNameMap } from '../utils/bikeNameManager';
 
 const STATION_INFO_URL = 'https://api.saint-etienne-metropole.fr/velivert/api/station_information.json';
 const STATION_STATUS_URL = 'https://api.saint-etienne-metropole.fr/velivert/api/station_status.json';
+const FREE_BIKE_STATUS_URL = 'https://api.saint-etienne-metropole.fr/velivert/api/free_bike_status.json';
 
-export default function StationsScreen() {
+interface Bike {
+  bike_id: string;
+  is_disabled?: boolean;
+  is_reserved?: boolean;
+  station_id?: string;
+}
+interface Station {
+  station_id: string;
+  name: string;
+}
+
+export default function BikesStatsScreen() {
+  const [search, setSearch] = useState('');
+  const [selectedBike, setSelectedBike] = useState<string | null>(null);
+  const [bikes, setBikes] = useState<Bike[]>([]);
   const [stations, setStations] = useState<Station[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [bikeNameMap, setBikeNameMap] = useState(getBikeNameMap());
 
   useEffect(() => {
-    const fetchStations = async () => {
+    let interval: number;
+    const fetchStationsAndBikes = async () => {
       try {
-        setLoading(true);
-        const [infoRes, statusRes] = await Promise.all([
+        const [infoRes, statusRes, bikesRes] = await Promise.all([
           fetch(STATION_INFO_URL),
           fetch(STATION_STATUS_URL),
+          fetch(FREE_BIKE_STATUS_URL),
         ]);
         const infoJson = await infoRes.json();
         const statusJson = await statusRes.json();
-        console.log('infoJson', infoJson);
-        console.log('statusJson', statusJson);
-        const infoList: StationInfo[] = infoJson.data.stations;
-        const statusList: StationStatus[] = statusJson.data.stations;
-        const statusMap = Object.fromEntries(statusList.map(s => [s.station_id, s]));
-        const merged: Station[] = infoList.map(station => ({
-          station_id: station.station_id,
-          name: station.name,
-          address: station.address,
-          num_bikes_available: statusMap[station.station_id]?.num_bikes_available || 0,
-          num_docks_available: statusMap[station.station_id]?.num_docks_available || 0,
-        }));
-        setStations(merged);
+        const bikesJson = await bikesRes.json();
+        const infoList: Station[] = infoJson.data.stations;
+        setStations(infoList);
+        setBikes(bikesJson.data.bikes || []);
+        // On recharge la mappe depuis le JSON (au cas où elle a changé)
+        setBikeNameMap(getBikeNameMap());
       } catch (e) {
-        setError('Erreur lors du chargement des stations.');
+        setStations([]);
+        setBikes([]);
+        setBikeNameMap(getBikeNameMap());
       } finally {
         setLoading(false);
       }
     };
-    fetchStations();
+    fetchStationsAndBikes();
+    interval = setInterval(fetchStationsAndBikes, 10000); // 10 secondes
+    return () => clearInterval(interval);
   }, []);
 
+  const filteredBikes = useMemo(() => {
+    return bikes.filter((bike: Bike) => {
+      const name = getBikeNameForId(bike.bike_id, bikeNameMap);
+      return name.toLowerCase().includes(search.toLowerCase()) || bike.bike_id.toLowerCase().includes(search.toLowerCase());
+    });
+  }, [bikes, search, bikeNameMap]);
+
+  function getStationName(stationId: string | undefined) {
+    if (!stationId) return null;
+    const station = stations.find((s: Station) => s.station_id === stationId);
+    return station ? station.name : null;
+  }
+
   if (loading) return <ActivityIndicator style={{ flex: 1 }} size="large" color="#2e7d32" />;
-  if (error) return <Text style={{ color: 'red', margin: 20 }}>{error}</Text>;
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Stations Vélivert</Text>
+      <Text style={styles.title}>Stats & Recherche Vélos</Text>
+      <TextInput
+        style={styles.input}
+        placeholder="Rechercher un vélo (prénom ou ID)"
+        value={search}
+        onChangeText={setSearch}
+      />
       <FlatList
-        data={stations}
-        keyExtractor={item => item.station_id}
+        data={filteredBikes}
+        keyExtractor={item => item.bike_id}
         renderItem={({ item }) => (
-          <View style={styles.stationCard}>
-            <Text style={styles.stationName}>{item.name}</Text>
-            {item.address && <Text style={styles.stationAddress}>{item.address}</Text>}
-            <Text>Vélos disponibles : {item.num_bikes_available}</Text>
-            <Text>Places libres : {item.num_docks_available}</Text>
-          </View>
+          <TouchableOpacity style={styles.bikeCard} onPress={() => setSelectedBike(item.bike_id)}>
+            <Text style={styles.bikeName}>{getBikeNameForId(item.bike_id, bikeNameMap)}</Text>
+            <Text>Statut : {item.is_disabled ? 'Occupé/désactivé' : item.is_reserved ? 'Réservé' : 'Libre'}</Text>
+            {item.station_id && getStationName(item.station_id) && (
+              <Text>En station : {getStationName(item.station_id)}</Text>
+            )}
+          </TouchableOpacity>
         )}
       />
+      {selectedBike && (
+        <View style={styles.bikeDetail}>
+          <Text style={styles.bikeDetailTitle}>Fiche vélo</Text>
+          {(() => {
+            const bike = bikes.find((b: Bike) => b.bike_id === selectedBike);
+            if (!bike) return <Text>Vélo introuvable</Text>;
+            return (
+              <>
+                <Text style={styles.bikeName}>{getBikeNameForId(bike.bike_id, bikeNameMap)}</Text>
+                <Text>Statut : {bike.is_disabled ? 'Occupé/désactivé' : bike.is_reserved ? 'Réservé' : 'Libre'}</Text>
+                {bike.station_id && getStationName(bike.station_id) && (
+                  <Text>En station : {getStationName(bike.station_id)}</Text>
+                )}
+                <TouchableOpacity onPress={() => setSelectedBike(null)} style={styles.closeButton}>
+                  <Text style={styles.closeButtonText}>Fermer</Text>
+                </TouchableOpacity>
+              </>
+            );
+          })()}
+        </View>
+      )}
     </View>
   );
 }
@@ -99,8 +131,15 @@ const styles = StyleSheet.create({
     color: '#2e7d32',
     textAlign: 'center',
   },
-  stationCard: {
-    backgroundColor: '#f1f8e9',
+  input: {
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+  },
+  bikeCard: {
+    backgroundColor: '#e3f2fd',
     borderRadius: 8,
     padding: 16,
     marginBottom: 12,
@@ -109,14 +148,42 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
-  stationName: {
+  bikeName: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#388e3c',
+    color: '#1976d2',
   },
-  stationAddress: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 4,
+  bikeDetail: {
+    position: 'absolute',
+    bottom: 30,
+    left: 20,
+    right: 20,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 5,
+    alignItems: 'center',
+  },
+  bikeDetailTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#2e7d32',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  closeButton: {
+    marginTop: 12,
+    backgroundColor: '#2e7d32',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 20,
+  },
+  closeButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
   },
 }); 

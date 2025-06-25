@@ -5,6 +5,7 @@ import MapView, { Marker, Region } from 'react-native-maps';
 import pointBleu from '../../assets/images/point-bleu.png';
 import pointGris from '../../assets/images/point-gris.png';
 import pointOrange from '../../assets/images/point-orange.png';
+import { getBikeNameForId, getBikeNameMap } from '../utils/bikeNameManager';
 
 const STATION_INFO_URL = 'https://api.saint-etienne-metropole.fr/velivert/api/station_information.json';
 const STATION_STATUS_URL = 'https://api.saint-etienne-metropole.fr/velivert/api/station_status.json';
@@ -37,6 +38,7 @@ export default function MapScreen() {
   const [selectedStation, setSelectedStation] = useState<Station | null>(null);
   const [selectedBike, setSelectedBike] = useState<Bike | null>(null);
   const [initialRegion, setInitialRegion] = useState<Region | null>(null);
+  const [bikeNameMap, setBikeNameMap] = useState(getBikeNameMap());
 
   useEffect(() => {
     let interval: number;
@@ -60,6 +62,8 @@ export default function MapScreen() {
         }));
         setStations(merged);
         setBikes(bikesJson.data.bikes || []);
+        // On recharge la mappe depuis le JSON (au cas où elle a changé)
+        setBikeNameMap(getBikeNameMap());
         // Demander la localisation de l'utilisateur
         let { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== 'granted') {
@@ -103,11 +107,11 @@ export default function MapScreen() {
           latitudeDelta: 0.08,
           longitudeDelta: 0.08,
         });
+        setBikeNameMap(getBikeNameMap());
       } finally {
         setLoading(false);
       }
     };
-    // Première récupération + intervalle
     fetchStationsAndBikes();
     interval = setInterval(fetchStationsAndBikes, 1000); // 1 seconde
     return () => clearInterval(interval);
@@ -115,25 +119,17 @@ export default function MapScreen() {
 
   if (loading || !initialRegion) return <ActivityIndicator style={{ flex: 1 }} size="large" color="#2e7d32" />;
 
-  // Liste de prénoms pour les vélos
-  const bikeNames = [
-    'Jean', 'Marie', 'Luc', 'Sophie', 'Paul', 'Emma', 'Louis', 'Julie', 'Hugo', 'Chloé',
-    'Lucas', 'Léa', 'Maxime', 'Camille', 'Nathan', 'Sarah', 'Tom', 'Manon', 'Enzo', 'Lina',
-    'Noah', 'Jade', 'Léo', 'Anna', 'Gabriel', 'Eva', 'Raphaël', 'Zoé', 'Arthur', 'Alice',
-    'Mathis', 'Léna', 'Ethan', 'Lou', 'Maël', 'Rose', 'Sacha', 'Mila', 'Axel', 'Nina',
-    'Jules', 'Louna', 'Adam', 'Ambre', 'Aaron', 'Inès', 'Victor', 'Iris', 'Martin', 'Maya'
-  ];
-  // Génère un prénom pour chaque vélo à partir de son ID
-  function getBikeName(bikeId: string) {
-    // On prend les 6 derniers chiffres/lettres, on les convertit en base 36 puis modulo la taille du tableau
-    const num = parseInt(bikeId.slice(-6), 36);
-    return bikeNames[num % bikeNames.length];
-  }
   // Trouver le nom de la station associée à un vélo
   function getStationName(stationId: string | undefined) {
     if (!stationId) return null;
     const station = stations.find(s => s.station_id === stationId);
     return station ? station.name : null;
+  }
+
+  // Attribution stable des prénoms aux vélos
+  const usedNames = new Set<string>();
+  function getBikeName(bikeId: string) {
+    return getBikeNameForId(bikeId, bikeNameMap);
   }
 
   return (
@@ -202,7 +198,7 @@ export default function MapScreen() {
       )}
       {selectedBike && (
         <View style={styles.infoCard}>
-          <Text style={styles.infoTitle}>Vélo {getBikeName(selectedBike.bike_id)}</Text>
+          <Text style={styles.infoTitle}>{getBikeName(selectedBike.bike_id)}</Text>
           <Text>Statut : {selectedBike.is_disabled ? 'Occupé/désactivé' : selectedBike.is_reserved ? 'Réservé' : 'Libre'}</Text>
           {selectedBike.station_id && getStationName(selectedBike.station_id) && (
             <Text>En station : {getStationName(selectedBike.station_id)}</Text>
