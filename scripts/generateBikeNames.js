@@ -79,6 +79,9 @@ const prenoms = [
   'Shiloh','Skyler','Sloan','Sonia','Stevie','Tiana','Tiffany','Vera','Willa','Zaria'
 ];
 
+// Déduplique la liste de prénoms
+const uniquePrenoms = Array.from(new Set(prenoms));
+
 const url = 'https://api.saint-etienne-metropole.fr/velivert/api/free_bike_status.json';
 
 https.get(url, (res) => {
@@ -91,7 +94,7 @@ https.get(url, (res) => {
       const ids = bikes.map(b => b.bike_id);
       const mapping = {};
       ids.forEach((id, i) => {
-        let prenom = prenoms[i] || `Name${i+1}`;
+        let prenom = uniquePrenoms[i] || `Name${i+1}`;
         mapping[id] = prenom;
       });
       fs.writeFileSync('bikeNames.json', JSON.stringify(mapping, null, 2), 'utf-8');

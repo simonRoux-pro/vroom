@@ -1,6 +1,6 @@
 import * as Location from 'expo-location';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Dimensions, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Dimensions, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 import MapView, { Marker, Region } from 'react-native-maps';
 import pointBleu from '../../assets/images/point-bleu.png';
 import pointGris from '../../assets/images/point-gris.png';
@@ -39,6 +39,7 @@ export default function MapScreen() {
   const [selectedBike, setSelectedBike] = useState<Bike | null>(null);
   const [initialRegion, setInitialRegion] = useState<Region | null>(null);
   const [bikeNameMap, setBikeNameMap] = useState(getBikeNameMap());
+  const [showActiveOnly, setShowActiveOnly] = useState(false);
 
   useEffect(() => {
     let interval: number;
@@ -134,7 +135,7 @@ export default function MapScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Compteur vélos */}
+      {/* Compteur vélos + switch filtre */}
       <View style={{ position: 'absolute', top: 40, left: 0, right: 0, zIndex: 10, alignItems: 'center' }}>
         {bikes.length > 0 && (
           <View style={{ backgroundColor: 'rgba(255,255,255,0.95)', borderRadius: 16, paddingVertical: 6, paddingHorizontal: 16, flexDirection: 'row', gap: 10, alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4, elevation: 2 }}>
@@ -144,6 +145,14 @@ export default function MapScreen() {
             <Text style={{ color: '#888' }}>Occupés : {bikes.filter(b => b.is_disabled).length}</Text>
           </View>
         )}
+        {/* Switch filtre occupés */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
+          <Text style={{ marginRight: 8 }}>Filtrer vélos occupés</Text>
+          <Switch
+            value={showActiveOnly}
+            onValueChange={setShowActiveOnly}
+          />
+        </View>
       </View>
       <MapView
         style={styles.map}
@@ -165,7 +174,8 @@ export default function MapScreen() {
         {bikes
           .filter(bike =>
             typeof bike.lat === 'number' && typeof bike.lon === 'number' &&
-            bike.lat > 40 && bike.lat < 50 && bike.lon > 0 && bike.lon < 10
+            bike.lat > 40 && bike.lat < 50 && bike.lon > 0 && bike.lon < 10 &&
+            (!showActiveOnly || bike.is_disabled)
           )
           .map(bike => (
             <Marker
@@ -202,6 +212,30 @@ export default function MapScreen() {
           <Text>Statut : {selectedBike.is_disabled ? 'Occupé/désactivé' : selectedBike.is_reserved ? 'Réservé' : 'Libre'}</Text>
           {selectedBike.station_id && getStationName(selectedBike.station_id) && (
             <Text>En station : {getStationName(selectedBike.station_id)}</Text>
+          )}
+          {/* BOUTON DE RESERVATION */}
+          {(!selectedBike.is_reserved && !selectedBike.is_disabled) && (
+            <TouchableOpacity
+              style={[styles.closeButton, { backgroundColor: '#1976d2', marginTop: 16 }]}
+              onPress={async () => {
+                try {
+                  // Remplacer l'URL par l'endpoint réel de réservation si besoin
+                  // const token = ... (à récupérer depuis le login)
+                  // const response = await fetch(`https://api.sigma.fifteen.eu/bikes/${selectedBike.bike_id}/reserve`, {
+                  //   method: 'POST',
+                  //   headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                  // });
+                  // const data = await response.json();
+                  // if (data.ok) { ... }
+                  // Pour l'instant, on simule la réservation
+                  alert('Vélo réservé avec succès (simulation) !');
+                } catch (e) {
+                  alert('Erreur lors de la réservation du vélo.');
+                }
+              }}
+            >
+              <Text style={styles.closeButtonText}>Réserver ce vélo</Text>
+            </TouchableOpacity>
           )}
           <TouchableOpacity onPress={() => setSelectedBike(null)} style={styles.closeButton}>
             <Text style={styles.closeButtonText}>Fermer</Text>
